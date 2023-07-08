@@ -4,15 +4,20 @@ import asyncio
 import audioop
 from opentelemetry import trace, metrics
 from typing import Generic, TypeVar, Union
+import secrets
+
+from vocode import pubsub
 from vocode.streaming.models.audio_encoding import AudioEncoding
 from vocode.streaming.models.model import BaseModel
 
 from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.utils.worker import AsyncWorker, ThreadAsyncWorker
+from vocode.streaming.pubsub.base_pubsub import Publisher
 
 
 tracer = trace.get_tracer(__name__)
 meter = metrics.get_meter(__name__)
+
 
 class Transcription(BaseModel):
     message: str
@@ -59,6 +64,11 @@ class BaseAsyncTranscriber(AbstractTranscriber[TranscriberConfigType], AsyncWork
     ):
         self.input_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self.output_queue: asyncio.Queue[Transcription] = asyncio.Queue()
+        self.publisher: Publisher = Publisher("BaseAsyncTranscriberPublisher")
+        self.publish_events: bool = True
+        self.transcription_audio_id = (
+            f"transcription_audio_id_{secrets.token_urlsafe(16)}"
+        )
         AsyncWorker.__init__(self, self.input_queue, self.output_queue)
         AbstractTranscriber.__init__(self, transcriber_config)
 
@@ -66,6 +76,21 @@ class BaseAsyncTranscriber(AbstractTranscriber[TranscriberConfigType], AsyncWork
         raise NotImplementedError
 
     def send_audio(self, chunk):
+        """ """
+        event_id = self.transcription_audio_id  # Update this with your own logic
+        topic = "human_audio_streams"
+
+        if self.publisher:
+            _ = asyncio.create_task(
+                self.publisher.publish(
+                    event_id,
+                    chunk,
+                    self.transcriber_config.audio_encoding,
+                    topic,
+                    pubsub,
+                )
+            )
+
         if not self.is_muted:
             self.consume_nonblocking(chunk)
         else:
@@ -84,6 +109,11 @@ class BaseThreadAsyncTranscriber(
     ):
         self.input_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self.output_queue: asyncio.Queue[Transcription] = asyncio.Queue()
+        self.publisher: Publisher = Publisher("BaseThreadAsyncTranscriberPublisher")
+        self.publish_events: bool = True
+        self.transcription_audio_id = (
+            f"transcription_audio_id_{secrets.token_urlsafe(16)}"
+        )
         ThreadAsyncWorker.__init__(self, self.input_queue, self.output_queue)
         AbstractTranscriber.__init__(self, transcriber_config)
 
@@ -91,6 +121,21 @@ class BaseThreadAsyncTranscriber(
         raise NotImplementedError
 
     def send_audio(self, chunk):
+        """ """
+        event_id = self.transcription_audio_id  # Update this with your own logic
+        topic = "human_audio_streams"
+
+        if self.publisher:
+            _ = asyncio.create_task(
+                self.publisher.publish(
+                    event_id,
+                    chunk,
+                    self.transcriber_config.audio_encoding,
+                    topic,
+                    pubsub,
+                )
+            )
+
         if not self.is_muted:
             self.consume_nonblocking(chunk)
         else:
